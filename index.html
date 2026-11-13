@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Infinite Road Racer</title>
+<style>
+:root{color-scheme:dark;--bg:#14161c;--fg:#f3f4f6;--acc:#ffc928;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,sans-serif;overflow:hidden;touch-action:none}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center}
+#wrap{position:relative;height:100%;max-height:100%;aspect-ratio:3/5;max-width:100%}
+canvas{width:100%;height:100%;display:block;background:#2a2d35;border-radius:8px}
+#ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(10,11,15,.8);text-align:center;padding:20px;border-radius:8px}
+#ov h1{margin:0;font-size:28px;color:var(--acc)}
+#ov p{margin:0;font-size:15px;opacity:.9;max-width:280px}
+button{font:inherit;font-weight:700;background:var(--acc);color:#111;border:0;border-radius:10px;padding:12px 28px;font-size:18px}
+#pad{position:absolute;bottom:10px;left:0;right:0;display:flex;justify-content:space-between;padding:0 12px;pointer-events:none}
+#pad button{pointer-events:auto;opacity:.35;width:25%;padding:14px 0;background:#fff}
+</style></head><body>
+<div id="wrap">
+<canvas id="c" width="360" height="600"></canvas>
+<div id="pad"><button id="L">◀</button><button id="R">▶</button></div>
+<div id="ov"><h1>🏎️ Road Racer</h1>
+<p>Dodge traffic, grab coins and beat the challenges. How far can you go?</p>
+<p>Arrow keys / A·D, tap the left or right side, or use the buttons.</p>
+<p id="hs"></p>
+<button id="go">Start</button></div>
+</div>
+<script>
+const cv=document.getElementById('c'),x=cv.getContext('2d'),ov=document.getElementById('ov');
+const W=360,H=600,RX=30,LW=75,LANES=4,PW=34,PH=60;
+const cols=['#e5484d','#3e9bff','#9b6bff','#2fbf71','#ff8a3d','#e8e8e8'];
+let best=0;try{best=+localStorage.getItem('rr_best')||0}catch(e){}
+document.getElementById('hs').textContent=best?'Best: '+best+' m':'';
+const laneX=l=>RX+LW*l+LW/2;
+let s;
+function reset(){s={run:true,lane:1,px:laneX(1),speed:240,dist:0,coins:0,en:[],co:[],spawn:0,cspawn:0,roadY:0,t:0,
+ ch:null,chCool:8,msg:'',msgT:0,heavy:false,shake:0}}
+function say(m,t=2.5){s.msg=m;s.msgT=t}
+function move(d){if(!s||!s.run)return;s.lane=Math.max(0,Math.min(LANES-1,s.lane+d))}
+addEventListener('keydown',e=>{if(['ArrowLeft','a','A'].includes(e.key))move(-1);if(['ArrowRight','d','D'].includes(e.key))move(1)});
+document.getElementById('L').onpointerdown=e=>{e.stopPropagation();move(-1)};
+document.getElementById('R').onpointerdown=e=>{e.stopPropagation();move(1)};
+cv.addEventListener('pointerdown',e=>{const r=cv.getBoundingClientRect();move(e.clientX<r.left+r.width/2?-1:1)});
+function newChallenge(){
+ if(Math.random()<.5){s.ch={type:'coin',text:'Coin Rush: collect 6 coins',goal:6,prog:0,time:14,reward:40}}
+ else{s.ch={type:'dodge',text:'Heavy Traffic: survive!',goal:0,prog:0,time:12,reward:30};s.heavy=true}
+ say('Challenge! '+s.ch.text)}
+function car(cx,cy,c,player){
+ x.save();x.translate(cx,cy);
+ x.fillStyle='#111';x.fillRect(-PW/2-3,-PH/2+6,6,14);x.fillRect(PW/2-3,-PH/2+6,6,14);x.fillRect(-PW/2-3,PH/2-20,6,14);x.fillRect(PW/2-3,PH/2-20,6,14);
+ x.fillStyle=c;x.beginPath();x.roundRect(-PW/2,-PH/2,PW,PH,8);x.fill();
+ x.fillStyle='rgba(20,30,50,.85)';x.fillRect(-PW/2+4,-PH/2+14,PW-8,10);x.fillRect(-PW/2+4,PH/2-16,PW-8,8);
+ x.fillStyle='rgba(255,255,255,.2)';x.fillRect(-PW/2+4,-PH/2+24,PW-8,12);
+ if(player){x.fillStyle='#ffd7a8';x.beginPath();x.arc(0,-2,5,0,7);x.fill();x.fillStyle='#fff';x.fillRect(-PW/2+2,-PH/2+2,6,4);x.fillRect(PW/2-8,-PH/2+2,6,4)}
+ x.restore()}
+function hit(a,b){return Math.abs(a.x-b.x)<PW-4&&Math.abs(a.y-b.y)<PH-6}
+function over(){
+ s.run=false;const d=Math.floor(s.dist);let nb=d>best;if(nb){best=d;try{localStorage.setItem('rr_best',d)}catch(e){}}
+ ov.innerHTML='<h1>💥 Crash!</h1><p>Distance: '+d+' m<br>Coins: '+s.coins+'</p><p>'+(nb?'🏆 New best!':'Best: '+best+' m')+'</p><button id="go">Play again</button>';
+ ov.style.display='flex';document.getElementById('go').onclick=start}
+function start(){reset();ov.style.display='none'}
+document.getElementById('go').onclick=start;
+let last=performance.now();
+function frame(n){
+ const dt=Math.min(.05,(n-last)/1000);last=n;
+ if(s&&s.run)update(dt);draw();requestAnimationFrame(frame)}
+function update(dt){
+ s.t+=dt;s.speed=Math.min(620,240+s.dist/12);s.dist+=s.speed*dt/18;
+ s.px+=(laneX(s.lane)-s.px)*Math.min(1,dt*14);
+ s.roadY=(s.roadY+s.speed*dt)%60;
+ s.spawn-=dt;if(s.spawn<=0){const l=Math.floor(Math.random()*LANES);
+  s.en.push({x:laneX(l),y:-80,v:s.speed*(.35+Math.random()*.3),c:cols[Math.random()*cols.length|0]});
+  s.spawn=(s.heavy?.38:.75)*(1-Math.min(.4,s.dist/6000))+Math.random()*.3}
+ s.cspawn-=dt;if(s.cspawn<=0){s.co.push({x:laneX(Math.floor(Math.random()*LANES)),y:-30});s.cspawn=.9+Math.random()*.8}
+ const p={x:s.px,y:H-110};
+ for(const e of s.en){e.y+=(s.speed-e.v)*dt;if(hit(p,e)){s.shake=.3;over();return}}
+ for(const c of s.co){c.y+=s.speed*dt;if(!c.got&&Math.abs(c.x-p.x)<26&&Math.abs(c.y-p.y)<36){c.got=1;s.coins++;if(s.ch&&s.ch.type==='coin')s.ch.prog++}}
+ s.en=s.en.filter(e=>e.y<H+80);s.co=s.co.filter(c=>c.y<H+30&&!c.got);
+ if(s.ch){s.ch.time-=dt;
+  if(s.ch.type==='coin'&&s.ch.prog>=s.ch.goal){s.coins+=s.ch.reward;say('Challenge complete! +'+s.ch.reward+' coins',2.5);s.ch=null;s.chCool=10}
+  else if(s.ch.time<=0){if(s.ch.type==='dodge'){s.coins+=s.ch.reward;say('Survived! +'+s.ch.reward+' coins',2.5)}else say('Challenge failed',2);s.ch=null;s.heavy=false;s.chCool=10}}
+ else{s.chCool-=dt;if(s.chCool<=0)newChallenge()}
+ if(s.msgT>0)s.msgT-=dt}
+function draw(){
+ x.clearRect(0,0,W,H);x.fillStyle='#1f6b3a';x.fillRect(0,0,W,H);
+ x.fillStyle='#34373f';x.fillRect(RX,0,LW*LANES,H);
+ x.fillStyle='#ffc928';x.fillRect(RX-3,0,3,H);x.fillRect(RX+LW*LANES,0,3,H);
+ const ry=s?s.roadY:0;x.fillStyle='rgba(255,255,255,.6)';
+ for(let l=1;l<LANES;l++)for(let y=-60+ry;y<H;y+=60)x.fillRect(RX+LW*l-2,y,4,30);
+ if(!s)return;
+ for(const c of s.co){x.fillStyle='#ffc928';x.beginPath();x.arc(c.x,c.y,10,0,7);x.fill();x.fillStyle='#b8860b';x.font='bold 13px system-ui';x.textAlign='center';x.fillText('$',c.x,c.y+5)}
+ for(const e of s.en)car(e.x,e.y,e.c,false);
+ car(s.px,H-110,'#ffc928',true);
+ x.fillStyle='rgba(0,0,0,.5)';x.fillRect(0,0,W,34);
+ x.fillStyle='#fff';x.font='bold 16px system-ui';x.textAlign='left';x.fillText(Math.floor(s.dist)+' m',10,23);
+ x.textAlign='right';x.fillText('🪙 '+s.coins,W-10,23);x.textAlign='center';x.fillText(Math.round(s.speed/4)+' km/h',W/2,23);
+ if(s.ch){x.fillStyle='rgba(62,155,255,.85)';x.fillRect(0,34,W,24);x.fillStyle='#fff';x.font='bold 13px system-ui';
+  x.fillText(s.ch.text+(s.ch.type==='coin'?' ('+s.ch.prog+'/'+s.ch.goal+')':'')+' · '+Math.ceil(s.ch.time)+'s',W/2,51)}
+ if(s.msgT>0){x.fillStyle='#fff';x.font='bold 20px system-ui';x.textAlign='center';x.shadowColor='#000';x.shadowBlur=6;x.fillText(s.msg,W/2,150);x.shadowBlur=0}}
+reset();s.run=false;requestAnimationFrame(frame);
+</script></body></html>
